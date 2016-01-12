@@ -41,8 +41,19 @@ func main() {
 		panic("Error creating CSV file")
 	}
 	defer csvfile.Close()
+
+	is_stat, err_is := os.Open("data_csv.txt")
+	if err_is != nil {
+		fmt.Println("Error during reading IS report");
+	}
+	defer is_stat.Close()
+
+	is_reader := csv.NewReader(is_stat)
+	is_report, _ := is_reader.ReadAll()
+
 	writer := csv.NewWriter(csvfile)
 	writer.Write([]string{"sep=,"})
+	writer.Write([]string{"Идентификатор ИР", "ПД", "СИ"})
 
 	// slices
 	for i := 0; i < len(matrix); i++ {
@@ -53,7 +64,7 @@ func main() {
 			resource := matrix[i][j]
 			fmt.Println(resource)
 
-			writer.Write([]string{resource, ""})
+			writer.Write([]string{resource, "", ""})
 
 			res, err := http.Get(addr + resource)
 			if err != nil {
@@ -72,37 +83,19 @@ func main() {
 			endDateTime := root.Metadata.TemporalExtent.EndDateTime
 
 			fmt.Println(beginDateTime + " - " + endDateTime)
-			writer.Write([]string{"metadata", beginDateTime + " - " + endDateTime})
-			writer.Write([]string{"data", ""})
+
+			// поиск по кешу СИ
+			var is_data_time string
+			for _, is_report_record := range is_report {
+				if (is_report_record[0] == (resource + "_1.nc")) {
+					is_data_time = is_report_record[2]
+				}
+			}
+
+			writer.Write([]string{"метаданные", beginDateTime + " - " + endDateTime, ""})
+			writer.Write([]string{"данные", "", is_data_time})
 		}
 
 		writer.Flush()
 	}
-
-	/*for _,resource := range resources {
-		fmt.Println(resource);
-		writer.Write([]string{resource, ""})
-
-		res, err := http.Get(addr + resource)
-		if err != nil {
-			panic(err.Error())
-		}	
-
-		body, err := ioutil.ReadAll(res.Body)
-
-		var root Root
-		err_parse := xml.Unmarshal([]byte(body), &root)
-		if err_parse != nil {
-			fmt.Printf("error: %root", err_parse)
-		}
-	
-		beginDateTime := root.Metadata.TemporalExtent.BeginDateTime
-		endDateTime := root.Metadata.TemporalExtent.EndDateTime
-
-		fmt.Println(beginDateTime + " - " + endDateTime)
-		writer.Write([]string{"metadata", beginDateTime + " - " + endDateTime})
-		writer.Write([]string{"data", ""})
-	}
-
-	writer.Flush()*/
 }
