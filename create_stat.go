@@ -36,6 +36,13 @@ type Root struct {
 }
 
 func main() {
+	row := 21;
+	col := 4;
+	biddata := make([][]string, row)
+	for i := range biddata {
+		biddata[i] = make([]string, col)
+	}
+
 	dbinfo := fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable",
         DB_USER, DB_PASSWORD, DB_ADDR, DB_NAME)
 	fmt.Println(dbinfo)
@@ -50,6 +57,7 @@ func main() {
     	fmt.Printf("Coudn't run query to BID: %s", err_select)
     }
 
+    i := 0;
     for (rows.Next()) {
     	var resourceId string
     	var bidupdated time.Time
@@ -62,7 +70,12 @@ func main() {
     	}
 
     	fmt.Println(resourceId + ";" + bidupdated.Format(time.RFC3339) + ";" + beginDateTime + ";" + endDateTime)
+    	biddata[i] = []string{resourceId, bidupdated.Format(time.RFC3339), beginDateTime, endDateTime}
+    	i++;
     }
+
+    fmt.Println("biddata: " + biddata[0][0])
+    fmt.Println("biddata[1]: " + biddata[0][1])
 
 	matrix := [][]string{
 		[]string{"dp.hydrometcentre.esimo.ru:8080", "RU_Hydrometcentre_42", "RU_Hydrometcentre_46", "RU_Hydrometcentre_60",
@@ -91,7 +104,7 @@ func main() {
 
 	writer := csv.NewWriter(csvfile)
 	writer.Write([]string{"sep=,"})
-	writer.Write([]string{"Идентификатор ИР", "ПД", "СИ"})
+	writer.Write([]string{"Идентификатор ИР", "ПД", "СИ", "БИД (время обновления)", "БИД (метаданные)"})
 
 	// slices
 	for i := 0; i < len(matrix); i++ {
@@ -102,7 +115,7 @@ func main() {
 			resource := matrix[i][j]
 			fmt.Println(resource)
 
-			writer.Write([]string{resource, "", ""})
+			writer.Write([]string{resource, "", "", "", ""})
 
 			res, err := http.Get(addr + resource)
 			if err != nil {
@@ -130,8 +143,21 @@ func main() {
 				}
 			}
 
-			writer.Write([]string{"метаданные", beginDateTime + " - " + endDateTime, ""})
-			writer.Write([]string{"данные", "", is_data_time})
+			// поиск по БИД
+			var bid_update_time string
+			var bid_md_begin string
+			var bid_md_end string
+			for z := range biddata {
+				if resource == biddata[z][0] {
+					bid_update_time = biddata[z][1]
+					bid_md_begin = biddata[z][2]
+					bid_md_end = biddata[z][3]
+				}
+			}
+
+			writer.Write([]string{"метаданные", beginDateTime + " - " + endDateTime, "", 
+				bid_update_time, bid_md_begin + "-" + bid_md_end})
+			writer.Write([]string{"данные", "", is_data_time, "", ""})
 		}
 
 		writer.Flush()
