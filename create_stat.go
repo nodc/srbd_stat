@@ -7,6 +7,16 @@ import (
 "io/ioutil"
 "encoding/xml"
 "encoding/csv"
+"database/sql"
+_ "github.com/lib/pq"
+"time"
+)
+
+const (
+	DB_ADDR		= "10.1.91.238:5432"
+    DB_USER     = "bid"
+    DB_PASSWORD = "bidesimo"
+    DB_NAME     = "bid"
 )
 
 type E2ETemporalExtent struct {
@@ -26,6 +36,34 @@ type Root struct {
 }
 
 func main() {
+	dbinfo := fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable",
+        DB_USER, DB_PASSWORD, DB_ADDR, DB_NAME)
+	fmt.Println(dbinfo)
+	db, err_db := sql.Open("postgres", dbinfo)
+	if err_db != nil {
+		fmt.Printf("Coudn't connect to BID: %s", err_db)
+	}
+    defer db.Close()
+
+    rows, err_select := db.Query("select * from monit.monit_report")
+    if err_select != nil {
+    	fmt.Printf("Coudn't run query to BID: %s", err_select)
+    }
+
+    for (rows.Next()) {
+    	var resourceId string
+    	var bidupdated time.Time
+    	var beginDateTime string
+    	var endDateTime string
+
+    	err_fetch := rows.Scan(&resourceId, &bidupdated, &beginDateTime, &endDateTime)
+    	if err_fetch != nil {
+    		fmt.Printf("Coudn't fetch data from BID: %s", err_fetch)
+    	}
+
+    	fmt.Println(resourceId + ";" + bidupdated.Format(time.RFC3339) + ";" + beginDateTime + ";" + endDateTime)
+    }
+
 	matrix := [][]string{
 		[]string{"dp.hydrometcentre.esimo.ru:8080", "RU_Hydrometcentre_42", "RU_Hydrometcentre_46", "RU_Hydrometcentre_60",
 							"RU_Hydrometcentre_61", "RU_Hydrometcentre_62", "RU_Hydrometcentre_63",
