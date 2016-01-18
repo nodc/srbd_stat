@@ -4,12 +4,16 @@ import (
 "fmt"
 "os"
 "net/http"
+"net/http/cookiejar"
 "io/ioutil"
 "encoding/xml"
 "encoding/csv"
 "database/sql"
 _ "github.com/lib/pq"
 "time"
+"log"
+"strings"
+"strconv"
 )
 
 const (
@@ -35,9 +39,30 @@ type Root struct {
 	Metadata E2ESearchMD
 }
 
+// GIS WMS getCapabilities()
+type WMS_Layer struct {
+	XMLName xml.Name `xml:"Layer"`
+	Title string `xml:"Title"`
+}
+
+type InstanceLayer struct {
+	XMLName xml.Name `xml:"Layer"`
+	Layer []WMS_Layer `xml:"Layer"`
+}
+
+type Capability struct {
+	XMLName xml.Name `xml:"Capability"`
+	Instance InstanceLayer `xml:"Layer"`
+}
+
+type WMS_Capabilities struct {
+	XMLName xml.Name `xml:"WMS_Capabilities"`
+	Cap Capability `xml:"Capability"`
+}
+
 func main() {
 	row := 21;
-	col := 4;
+	col := 6;
 	biddata := make([][]string, row)
 	for i := range biddata {
 		biddata[i] = make([]string, col)
@@ -63,14 +88,18 @@ func main() {
     	var bidupdated time.Time
     	var beginDateTime string
     	var endDateTime string
+    	var bid_data_min string
+		var bid_data_max string
 
-    	err_fetch := rows.Scan(&resourceId, &bidupdated, &beginDateTime, &endDateTime)
+    	err_fetch := rows.Scan(&resourceId, &bidupdated, &beginDateTime, &endDateTime, 
+    							&bid_data_min, &bid_data_max)
     	if err_fetch != nil {
     		fmt.Printf("Coudn't fetch data from BID: %s", err_fetch)
     	}
 
-    	fmt.Println(resourceId + ";" + bidupdated.Format(time.RFC3339) + ";" + beginDateTime + ";" + endDateTime)
-    	biddata[i] = []string{resourceId, bidupdated.Format(time.RFC3339), beginDateTime, endDateTime}
+    	// fmt.Println(resourceId + ";" + bidupdated.Format(time.RFC3339) + ";" + beginDateTime + ";" + endDateTime)
+    	biddata[i] = []string{resourceId, bidupdated.Format(time.RFC3339), beginDateTime, endDateTime,
+    							bid_data_min, bid_data_max}
     	i++;
     }
 
@@ -104,23 +133,24 @@ func main() {
 
 	writer := csv.NewWriter(csvfile)
 	writer.Write([]string{"sep=,"})
-	writer.Write([]string{"Идентификатор ИР", "ПД", "СИ", "БИД (время обновления)", "БИД (метаданные)"})
+	writer.Write([]string{"Идентификатор ИР", "ПД", "СИ", "БИД (время обновления)", "БИД"})
 
 	// slices
 	for i := 0; i < len(matrix); i++ {
 		addr := "http://" + matrix[i][0] + "/dpms/controller?action=getResourceCache&resourceId=";
+		// addr_getCron := "http://" + matrix[i][0] + "/dpms/controller?action=getCronTriggerExpression&resourceId=";
+		
 		fmt.Println(addr)
+		// fmt.Println(addr_getCron)
 
 		for j := 1; j <= len(matrix[i][1:]); j++ {
 			resource := matrix[i][j]
 			fmt.Println(resource)
 
-			writer.Write([]string{resource, "", "", "", ""})
-
 			res, err := http.Get(addr + resource)
 			if err != nil {
 				panic(err.Error())
-			}	
+			}
 
 			body, err := ioutil.ReadAll(res.Body)
 
@@ -132,6 +162,25 @@ func main() {
 	
 			beginDateTime := root.Metadata.TemporalExtent.BeginDateTime
 			endDateTime := root.Metadata.TemporalExtent.EndDateTime
+
+			// get min/max dates from GIS
+			getWMSLayersDates(resource)
+			// fmt.Println("Layer dates: " + layer_min_date + "-" + layer_max_date)
+
+			/*res_cron, err_cron := http.Get(addr_getCron + resource)
+			if err_cron != nil {
+				fmt.Printf("Couldn't get cron expression : %s", err_cron.Error())
+			}*/
+
+			/*body_cron, err_read_cron := ioutil.ReadAll(res_cron.Body)
+			if err_read_cron != nil {
+				fmt.Printf("Couldn't read cron expression from response: %s", err_read_cron.Error())
+			}*/
+
+			cronExpression := getCronExpression(matrix[i][0], resource);
+
+			//@todo: добавить дату/время генерации справки
+			writer.Write([]string{resource, cronExpression, "", "", "", ""})
 
 			fmt.Println(beginDateTime + " - " + endDateTime)
 
@@ -147,19 +196,96 @@ func main() {
 			var bid_update_time string
 			var bid_md_begin string
 			var bid_md_end string
+			var bid_data_min string
+			var bid_data_max string
+
 			for z := range biddata {
 				if resource == biddata[z][0] {
 					bid_update_time = biddata[z][1]
 					bid_md_begin = biddata[z][2]
 					bid_md_end = biddata[z][3]
+					bid_data_min = biddata[z][4]
+					bid_data_max = biddata[z][5]
 				}
 			}
 
-			writer.Write([]string{"метаданные", beginDateTime + " - " + endDateTime, "", 
+			writer.Write([]string{"метаданные", beginDateTime + "-" + endDateTime, "", 
 				bid_update_time, bid_md_begin + "-" + bid_md_end})
-			writer.Write([]string{"данные", "", is_data_time, "", ""})
+			writer.Write([]string{"данные", "", is_data_time, "", bid_data_min + "-" + bid_data_max})
 		}
 
 		writer.Flush()
 	}
+}
+
+func getWMSLayersDates (resourceId string) (string, string) {
+	addr := "http://gis.esimo.ru/resources/" + resourceId + "/wms?request=GetCapabilities"
+	fmt.Println(addr)
+	cookieJar, _ := cookiejar.New(nil) 
+
+	client := &http.Client{ 
+		Jar: cookieJar, 
+	} 
+
+	req, err := http.NewRequest("GET", addr, nil) 
+
+	if err != nil { 
+		log.Fatalln(err) 
+	} 
+
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.106 Safari/537.36") 
+
+	resp, err := client.Do(req) 
+	if err != nil { 
+		log.Fatalln(err) 
+	} 
+
+	defer resp.Body.Close() 
+	body, err := ioutil.ReadAll(resp.Body) 
+	if err != nil { 
+		log.Fatalln(err) 
+	} 
+
+	year := strconv.Itoa(time.Now().Year())
+
+	if (strings.HasPrefix(string(body), "<?xml")) {
+		var layer WMS_Capabilities
+		err_parse := xml.Unmarshal([]byte(body), &layer)
+		if err_parse != nil {
+			fmt.Printf("Couldn't unmarshal WMS Layer capabilities", err_parse)
+		}
+
+		// dates := make([]string, len(layer.Cap.Instance.Layer))
+		fmt.Println("index=" + year)
+		for l := range layer.Cap.Instance.Layer {
+			index := strings.LastIndex(layer.Cap.Instance.Layer[l].Title, year)
+			// длина даты и срока в тайтле слоя = 13
+			fmt.Printf("%s: index=%d", layer.Cap.Instance.Layer[l].Title, index)
+			if index != -1 && len(layer.Cap.Instance.Layer[l].Title) > index + 14 {
+				layerDate := layer.Cap.Instance.Layer[l].Title[index:index + 14]
+				fmt.Printf("Layer title: %s", layerDate);
+				fmt.Println()
+			}
+		}
+		title := layer.Cap.Instance.Layer[0].Title		
+
+		return title, title
+	}
+
+	return "", ""
+}
+
+func getCronExpression(domain string, resource string) (string) {
+	addr := "http://" + domain + "/dpms/controller?action=getCronTriggerExpression&resourceId=";
+	res, err := http.Get(addr + resource)
+	if err != nil {
+		fmt.Printf("Error while getting getCronExpression: %s", err.Error())
+	}
+
+	body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		fmt.Printf("Couldn't read cron expression from response: %s", err.Error())
+	}
+
+	return string(body)
 }
