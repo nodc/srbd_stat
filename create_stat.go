@@ -23,6 +23,8 @@ const (
     DB_USER     = "bid"
     DB_PASSWORD = "bidesimo"
     DB_NAME     = "bid"
+    is_date_pattern = "Mon Jan 02 15:04:05 MST-07:00 2006"			
+	global_date_pattern = "2006-01-02T15:04:05"
 )
 
 type E2ETemporalExtent struct {
@@ -111,16 +113,12 @@ func main() {
     		fmt.Printf("Coudn't fetch data from BID: %s", err_fetch)
     	}
 
-    	// fmt.Println(resourceId + ";" + bidupdated.Format(time.RFC3339) + ";" + beginDateTime + ";" + endDateTime)
     	biddata[i] = []string{resourceId, bidupdated.Format(time.RFC3339), beginDateTime, endDateTime,
     							bid_data_min, bid_data_max}
     	i++;
     }
 
-    fmt.Println("biddata: " + biddata[0][0])
-    fmt.Println("biddata[1]: " + biddata[0][1])
-
-	matrix := [][]string{
+    matrix := [][]string{
 		[]string{"dp.hydrometcentre.esimo.ru:8080", "RU_Hydrometcentre_42", "RU_Hydrometcentre_46", "RU_Hydrometcentre_60",
 							"RU_Hydrometcentre_61", "RU_Hydrometcentre_62", "RU_Hydrometcentre_63",
 							"RU_Hydrometcentre_64", "RU_Hydrometcentre_65", "RU_Hydrometcentre_66",
@@ -154,11 +152,7 @@ func main() {
 
 	// slices
 	for i := 0; i < len(matrix); i++ {
-		addr := "http://" + matrix[i][0] + "/dpms/controller?action=getResourceCache&resourceId=";
-		// addr_getCron := "http://" + matrix[i][0] + "/dpms/controller?action=getCronTriggerExpression&resourceId=";
-		
-		fmt.Println(addr)
-		// fmt.Println(addr_getCron)
+		addr := "http://" + matrix[i][0] + "/dpms/controller?action=getResourceCache&resourceId=";		
 
 		for j := 1; j <= len(matrix[i][1:]); j++ {
 			resource := matrix[i][j]
@@ -182,8 +176,8 @@ func main() {
 
 			// get min/max dates from GIS
 			layer_min_date, layer_max_date := getWMSLayersDates(resource)
-			fmt.Println("Layer dates: " + layer_min_date + "-" + layer_max_date)
 			var layer_temporal string
+
 			if (layer_min_date == layer_max_date) {
 				layer_temporal = layer_min_date
 			} else if (layer_min_date == "") {
@@ -194,28 +188,21 @@ func main() {
 				layer_temporal = layer_min_date + " - " + layer_max_date
 			}
 
-			/*res_cron, err_cron := http.Get(addr_getCron + resource)
-			if err_cron != nil {
-				fmt.Printf("Couldn't get cron expression : %s", err_cron.Error())
-			}*/
-
-			/*body_cron, err_read_cron := ioutil.ReadAll(res_cron.Body)
-			if err_read_cron != nil {
-				fmt.Printf("Couldn't read cron expression from response: %s", err_read_cron.Error())
-			}*/
-
 			cronExpression := getCronExpression(matrix[i][0], resource);
+			cronExpression = "запуск в " + getCronStartTime(cronExpression)
 			
 			// ид ИР, ПД, СИ, БИД (время обновления), БИД, ГИС 
 			writer.Write([]string{resource, cronExpression, "", "", "", "", "", ""})
 
-			// fmt.Println(beginDateTime + " - " + endDateTime)
-
-			// поиск по кешу СИ
+			// поиск по кешу СИ			
 			var is_data_time string
+
 			for _, is_report_record := range is_report {
 				if (is_report_record[0] == (resource + "_1.nc")) {
 					is_data_time = is_report_record[2]
+					is_date, _ := time.Parse(is_date_pattern, is_data_time)
+					fmt.Println(is_date)
+					is_data_time = is_date.Format(global_date_pattern)
 				}
 			}
 
@@ -291,14 +278,11 @@ func getWMSLayersDates (resourceId string) (string, string) {
 
 		for l := range layer.Cap.Instance.Layer {
 			index := strings.LastIndex(layer.Cap.Instance.Layer[l].Title, year)
-			// длина даты и срока в тайтле слоя = 13
-			//fmt.Printf("%s: index=%d", layer.Cap.Instance.Layer[l].Title, index)
+			// длина даты и срока в тайтле слоя = 13			
 			if index != -1 && len(layer.Cap.Instance.Layer[l].Title) > index + 14 {
 				// layerDate exmaple: 2016-01-26 06ч
 				// букву ч убираем
-				layerDate := layer.Cap.Instance.Layer[l].Title[index:index + 13]
-			//	fmt.Printf("Layer title: %s", layerDate);
-			//	fmt.Println()
+				layerDate := layer.Cap.Instance.Layer[l].Title[index:index + 13]			
 				layers_pub_dates[l] = layerDate + "ч"
 			}
 		}
@@ -332,4 +316,33 @@ func getCronExpression(domain string, resource string) (string) {
 	}
 
 	return string(body)
+}
+
+// приводит время старта по крону в читабельный вид
+func getCronStartTime(expr string) (string) {
+	words := strings.Fields(expr)
+
+	if len(words) > 3 {
+		var freq string
+		var hours string
+		if strings.Contains(words[2], "/") {
+			freq_index := strings.Index(words[2], "/")
+			if freq_index != -1 {
+				hours = words[2][0:freq_index]
+				freq = words[2][freq_index + 1:]
+			}
+		} else {
+			hours = words[2]
+		}
+
+		text := hours + ":" + words[1]
+
+		if freq != "" {
+			text += " (каждые " + freq + " час(ов))"
+		}
+
+		return text;
+	}
+
+	return ""
 }
