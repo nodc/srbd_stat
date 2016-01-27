@@ -13,7 +13,9 @@ _ "github.com/lib/pq"
 "time"
 "log"
 "strings"
+"sort"
 "strconv"
+"github.com/tealeg/xlsx"
 )
 
 const (
@@ -67,6 +69,18 @@ func main() {
 	for i := range biddata {
 		biddata[i] = make([]string, col)
 	}
+
+	var file *xlsx.File
+    // var sheet *xlsx.Sheet
+    // var excel_row *xlsx.Row
+    // var cell *xlsx.Cell
+    var err_excel error
+
+    file = xlsx.NewFile()
+    _, err_excel = file.AddSheet("Sheet1")
+    if err_excel != nil {
+        fmt.Printf(err_excel.Error())
+    }
 
 	dbinfo := fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable",
         DB_USER, DB_PASSWORD, DB_ADDR, DB_NAME)
@@ -133,7 +147,10 @@ func main() {
 
 	writer := csv.NewWriter(csvfile)
 	writer.Write([]string{"sep=,"})
-	writer.Write([]string{"Идентификатор ИР", "ПД", "СИ", "БИД (время обновления)", "БИД"})
+	t := time.Now()
+	title := t.Format(time.RFC850) + "\n"
+	writer.Write([]string{"Время генерации справки: " + title})
+	writer.Write([]string{"Идентификатор ИР", "ПД", "СИ", "БИД (время обновления)", "БИД", "ГИС"})
 
 	// slices
 	for i := 0; i < len(matrix); i++ {
@@ -164,8 +181,18 @@ func main() {
 			endDateTime := root.Metadata.TemporalExtent.EndDateTime
 
 			// get min/max dates from GIS
-			getWMSLayersDates(resource)
-			// fmt.Println("Layer dates: " + layer_min_date + "-" + layer_max_date)
+			layer_min_date, layer_max_date := getWMSLayersDates(resource)
+			fmt.Println("Layer dates: " + layer_min_date + "-" + layer_max_date)
+			var layer_temporal string
+			if (layer_min_date == layer_max_date) {
+				layer_temporal = layer_min_date
+			} else if (layer_min_date == "") {
+				layer_temporal = layer_max_date
+			} else if (layer_max_date == "") {
+				layer_temporal = layer_min_date
+			} else {
+				layer_temporal = layer_min_date + " - " + layer_max_date
+			}
 
 			/*res_cron, err_cron := http.Get(addr_getCron + resource)
 			if err_cron != nil {
@@ -178,11 +205,11 @@ func main() {
 			}*/
 
 			cronExpression := getCronExpression(matrix[i][0], resource);
+			
+			// ид ИР, ПД, СИ, БИД (время обновления), БИД, ГИС 
+			writer.Write([]string{resource, cronExpression, "", "", "", "", "", ""})
 
-			//@todo: добавить дату/время генерации справки
-			writer.Write([]string{resource, cronExpression, "", "", "", ""})
-
-			fmt.Println(beginDateTime + " - " + endDateTime)
+			// fmt.Println(beginDateTime + " - " + endDateTime)
 
 			// поиск по кешу СИ
 			var is_data_time string
@@ -209,15 +236,18 @@ func main() {
 				}
 			}
 
+			bid_temporal := bid_data_min + "-" + bid_data_max
+
 			writer.Write([]string{"метаданные", beginDateTime + "-" + endDateTime, "", 
-				bid_update_time, bid_md_begin + "-" + bid_md_end})
-			writer.Write([]string{"данные", "", is_data_time, "", bid_data_min + "-" + bid_data_max})
+				bid_update_time, bid_md_begin + "-" + bid_md_end, ""})
+			writer.Write([]string{"данные", "", is_data_time, "", bid_temporal, layer_temporal})
 		}
 
 		writer.Flush()
 	}
 }
 
+// returns min date, max date from layer titles
 func getWMSLayersDates (resourceId string) (string, string) {
 	addr := "http://gis.esimo.ru/resources/" + resourceId + "/wms?request=GetCapabilities"
 	fmt.Println(addr)
@@ -248,28 +278,42 @@ func getWMSLayersDates (resourceId string) (string, string) {
 
 	year := strconv.Itoa(time.Now().Year())
 
-	if (strings.HasPrefix(string(body), "<?xml")) {
+	if (len(body) > 5 && strings.HasPrefix(string(body), "<?xml")) {
 		var layer WMS_Capabilities
 		err_parse := xml.Unmarshal([]byte(body), &layer)
 		if err_parse != nil {
 			fmt.Printf("Couldn't unmarshal WMS Layer capabilities", err_parse)
 		}
 
-		// dates := make([]string, len(layer.Cap.Instance.Layer))
-		fmt.Println("index=" + year)
+		// массив с датами из тайтлов слоев
+		layers_pub_dates := make([]string, len(layer.Cap.Instance.Layer))
+		//var layers_pub_dates [len(layer.Cap.Instance.Layer)]string
+
 		for l := range layer.Cap.Instance.Layer {
 			index := strings.LastIndex(layer.Cap.Instance.Layer[l].Title, year)
 			// длина даты и срока в тайтле слоя = 13
-			fmt.Printf("%s: index=%d", layer.Cap.Instance.Layer[l].Title, index)
+			//fmt.Printf("%s: index=%d", layer.Cap.Instance.Layer[l].Title, index)
 			if index != -1 && len(layer.Cap.Instance.Layer[l].Title) > index + 14 {
-				layerDate := layer.Cap.Instance.Layer[l].Title[index:index + 14]
-				fmt.Printf("Layer title: %s", layerDate);
-				fmt.Println()
+				// layerDate exmaple: 2016-01-26 06ч
+				// букву ч убираем
+				layerDate := layer.Cap.Instance.Layer[l].Title[index:index + 13]
+			//	fmt.Printf("Layer title: %s", layerDate);
+			//	fmt.Println()
+				layers_pub_dates[l] = layerDate + "ч"
 			}
 		}
-		title := layer.Cap.Instance.Layer[0].Title		
+		var layer_min_date string
+		var layer_max_date string
 
-		return title, title
+		// сортировка дат из тайтлов слоев
+		if (len(layers_pub_dates) > 0) {
+			sort.Strings(layers_pub_dates)
+
+			layer_min_date = layers_pub_dates[0]
+			layer_max_date = layers_pub_dates[len(layers_pub_dates) - 1]
+		}
+
+		return layer_min_date, layer_max_date
 	}
 
 	return "", ""
