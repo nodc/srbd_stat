@@ -1,68 +1,68 @@
 package main
 
 import (
-"fmt"
-"os"
-"net/http"
-"net/http/cookiejar"
-"io/ioutil"
-"encoding/xml"
-"encoding/csv"
-"database/sql"
-_ "github.com/lib/pq"
-"time"
-"log"
-"strings"
-"sort"
-"strconv"
-"github.com/tealeg/xlsx"
-"github.com/BurntSushi/toml"
+	"fmt"
+	"os"
+	"net/http"
+	"net/http/cookiejar"
+	"io/ioutil"
+	"encoding/xml"
+	"encoding/csv"
+	"database/sql"
+	_ "github.com/lib/pq"
+	"time"
+	"log"
+	"strings"
+	"sort"
+	"strconv"
+	"github.com/tealeg/xlsx"
+	"github.com/BurntSushi/toml"
 )
 
 type Config struct {
-	DB_ADDR	string
-    DB_USER string
-    DB_PASSWORD string
-    DB_NAME     string
-    Is_date_pattern string
+	DB_ADDR             string
+	DB_USER             string
+	DB_PASSWORD         string
+	DB_NAME             string
+	Is_date_pattern     string
 	Global_date_pattern string
 }
 
 type E2ETemporalExtent struct {
-	XMLName xml.Name `xml:"E2ETemporalExtent"`
+	XMLName       xml.Name `xml:"E2ETemporalExtent"`
 	BeginDateTime string `xml:"beginDateTime"`
-	EndDateTime string `xml:"endDateTime"`
+	EndDateTime   string `xml:"endDateTime"`
 }
 
 type E2ESearchMD struct {
-	XMLName xml.Name `xml:"E2ESearchMD"`
+	XMLName        xml.Name `xml:"E2ESearchMD"`
 	TemporalExtent E2ETemporalExtent `xml:"E2ETemporalExtent"`
 }
 
 type Root struct {
-	XMLName xml.Name `xml:"root"`	
+	XMLName  xml.Name `xml:"root"`
 	Metadata E2ESearchMD
 }
 
 // GIS WMS getCapabilities()
 type WMS_Layer struct {
 	XMLName xml.Name `xml:"Layer"`
-	Title string `xml:"Title"`
+	Title   string `xml:"Title"`
 }
 
 type InstanceLayer struct {
 	XMLName xml.Name `xml:"Layer"`
-	Layer []WMS_Layer `xml:"Layer"`
+	Layer   []WMS_Layer `xml:"Layer"`
 }
 
 type Capability struct {
-	XMLName xml.Name `xml:"Capability"`
+	XMLName  xml.Name `xml:"Capability"`
 	Instance InstanceLayer `xml:"Layer"`
 }
 
 type WMS_Capabilities struct {
 	XMLName xml.Name `xml:"WMS_Capabilities"`
-	Cap Capability `xml:"Capability"`
+	Cap     Capability `xml:"Capability"`
 }
 
 func main() {
@@ -76,59 +76,59 @@ func main() {
 	}
 
 	var file *xlsx.File
-    // var sheet *xlsx.Sheet
-    // var excel_row *xlsx.Row
-    // var cell *xlsx.Cell
-    var err_excel error
+	var sheet *xlsx.Sheet
+	var excel_row *xlsx.Row
+	var cell *xlsx.Cell
+	var err_excel error
 
-    file = xlsx.NewFile()
-    _, err_excel = file.AddSheet("Sheet1")
-    if err_excel != nil {
-        fmt.Printf(err_excel.Error())
-    }
+	file = xlsx.NewFile()
+	sheet, err_excel = file.AddSheet("Sheet1")
+	if err_excel != nil {
+		fmt.Printf(err_excel.Error())
+	}
 
 	dbinfo := fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable",
-        config.DB_USER, config.DB_PASSWORD, config.DB_ADDR, config.DB_NAME)
+		config.DB_USER, config.DB_PASSWORD, config.DB_ADDR, config.DB_NAME)
 	fmt.Println(dbinfo)
 	db, err_db := sql.Open("postgres", dbinfo)
 	if err_db != nil {
 		fmt.Printf("Coudn't connect to BID: %s", err_db)
 	}
-    defer db.Close()
+	defer db.Close()
 
-    rows, err_select := db.Query("select * from monit.monit_report")
-    if err_select != nil {
-    	fmt.Printf("Coudn't run query to BID: %s", err_select)
-    }
+	rows, err_select := db.Query("select * from monit.monit_report")
+	if err_select != nil {
+		fmt.Printf("Coudn't run query to BID: %s", err_select)
+	}
 
-    i := 0;
-    for (rows.Next()) {
-    	var resourceId string
-    	var bidupdated time.Time
-    	var beginDateTime string
-    	var endDateTime string
-    	var bid_data_min string
+	i := 0;
+	for (rows.Next()) {
+		var resourceId string
+		var bidupdated time.Time
+		var beginDateTime string
+		var endDateTime string
+		var bid_data_min string
 		var bid_data_max string
 
-    	err_fetch := rows.Scan(&resourceId, &bidupdated, &beginDateTime, &endDateTime, 
-    							&bid_data_min, &bid_data_max)
-    	if err_fetch != nil {
-    		fmt.Printf("Coudn't fetch data from BID: %s", err_fetch)
-    	}
+		err_fetch := rows.Scan(&resourceId, &bidupdated, &beginDateTime, &endDateTime,
+			&bid_data_min, &bid_data_max)
+		if err_fetch != nil {
+			fmt.Printf("Coudn't fetch data from BID: %s", err_fetch)
+		}
 
-    	biddata[i] = []string{resourceId, bidupdated.Format(time.RFC3339), beginDateTime, endDateTime,
-    							bid_data_min, bid_data_max}
-    	i++;
-    }
+		biddata[i] = []string{resourceId, bidupdated.Format(time.RFC3339), beginDateTime, endDateTime,
+			bid_data_min, bid_data_max}
+		i++;
+	}
 
-    matrix := [][]string{
+	matrix := [][]string{
 		[]string{"dp.hydrometcentre.esimo.ru:8080", "RU_Hydrometcentre_42", "RU_Hydrometcentre_46", "RU_Hydrometcentre_60",
-							"RU_Hydrometcentre_61", "RU_Hydrometcentre_62", "RU_Hydrometcentre_63",
-							"RU_Hydrometcentre_64", "RU_Hydrometcentre_65", "RU_Hydrometcentre_66",
-							"RU_Hydrometcentre_68", "RU_Hydrometcentre_69", "RU_Hydrometcentre_122"},
+			"RU_Hydrometcentre_61", "RU_Hydrometcentre_62", "RU_Hydrometcentre_63",
+			"RU_Hydrometcentre_64", "RU_Hydrometcentre_65", "RU_Hydrometcentre_66",
+			"RU_Hydrometcentre_68", "RU_Hydrometcentre_69", "RU_Hydrometcentre_122"},
 		[]string{"dpms.meteo.ru", "RU_RIHMI-WDC_67", "RU_RIHMI-WDC_1196", "RU_RIHMI-WDC_1198",
-							"RU_RIHMI-WDC_1172", "RU_RIHMI-WDC_1197", "RU_RIHMI-WDC_1242",
-							"RU_RIHMI-WDC_1195"},
+			"RU_RIHMI-WDC_1172", "RU_RIHMI-WDC_1197", "RU_RIHMI-WDC_1242",
+			"RU_RIHMI-WDC_1195"},
 	}
 
 	csvfile, err_csv := os.Create("ir_stat.csv")
@@ -149,13 +149,16 @@ func main() {
 	writer := csv.NewWriter(csvfile)
 	writer.Write([]string{"sep=,"})
 	t := time.Now()
-	title := t.Format(time.RFC850) + "\n"
-	writer.Write([]string{"Время генерации справки: " + title})
+	generationTime := t.Format(time.RFC850) + "\n"
+
+	WriteXLSHeader(sheet, excel_row, cell, generationTime)
+
+	writer.Write([]string{"Время генерации справки: " + generationTime})
 	writer.Write([]string{"Идентификатор ИР", "ПД", "СИ", "БИД (время обновления)", "БИД", "ГИС"})
 
 	// slices
 	for i := 0; i < len(matrix); i++ {
-		addr := "http://" + matrix[i][0] + "/dpms/controller?action=getResourceCache&resourceId=";		
+		addr := "http://" + matrix[i][0] + "/dpms/controller?action=getResourceCache&resourceId=";
 
 		for j := 1; j <= len(matrix[i][1:]); j++ {
 			resource := matrix[i][j]
@@ -173,7 +176,7 @@ func main() {
 			if err_parse != nil {
 				fmt.Printf("error: %root", err_parse)
 			}
-	
+
 			beginDateTime := root.Metadata.TemporalExtent.BeginDateTime
 			endDateTime := root.Metadata.TemporalExtent.EndDateTime
 
@@ -193,9 +196,15 @@ func main() {
 
 			cronExpression := getCronExpression(matrix[i][0], resource);
 			cronExpression = "запуск в " + getCronStartTime(cronExpression)
-			
+
 			// ид ИР, ПД, СИ, БИД (время обновления), БИД, ГИС 
 			writer.Write([]string{resource, cronExpression, "", "", "", "", "", ""})
+
+			excel_row = sheet.AddRow()
+			cell = excel_row.AddCell()
+			cell.Value = resource
+			cell = excel_row.AddCell()
+			cell.Value = cronExpression
 
 			// поиск по кешу СИ			
 			var is_data_time string
@@ -228,43 +237,77 @@ func main() {
 
 			bid_temporal := bid_data_min + "-" + bid_data_max
 
-			writer.Write([]string{"метаданные", beginDateTime + "-" + endDateTime, "", 
+			excel_row = sheet.AddRow()
+			cell = excel_row.AddCell()
+			cell.Value = "метаданные"
+			cell = excel_row.AddCell()
+			cell.Value = beginDateTime + "-" + endDateTime
+			cell = excel_row.AddCell()
+			cell.Value = ""
+			cell = excel_row.AddCell()
+			cell.Value = bid_update_time
+			cell = excel_row.AddCell()
+			cell.Value = bid_md_begin + "-" + bid_md_end
+			cell = excel_row.AddCell()
+			cell.Value = ""
+
+			excel_row = sheet.AddRow()
+			cell = excel_row.AddCell()
+			cell.Value = "данные"
+			cell = excel_row.AddCell()
+			cell.Value = ""
+			cell = excel_row.AddCell()
+			cell.Value = is_data_time
+			cell = excel_row.AddCell()
+			cell.Value = ""
+			cell = excel_row.AddCell()
+			cell.Value = bid_temporal
+			cell = excel_row.AddCell()
+			cell.Value = layer_temporal
+
+
+			writer.Write([]string{"метаданные", beginDateTime + "-" + endDateTime, "",
 				bid_update_time, bid_md_begin + "-" + bid_md_end, ""})
 			writer.Write([]string{"данные", "", is_data_time, "", bid_temporal, layer_temporal})
 		}
 
 		writer.Flush()
+
+		err := file.Save("ir-new-stat.xlsx")
+		if err != nil {
+			fmt.Printf(err.Error())
+		}
 	}
 }
 
 // returns min date, max date from layer titles
-func getWMSLayersDates (resourceId string) (string, string) {
+func getWMSLayersDates(resourceId string) (string, string) {
 	addr := "http://gis.esimo.ru/resources/" + resourceId + "/wms?request=GetCapabilities"
 	fmt.Println(addr)
-	cookieJar, _ := cookiejar.New(nil) 
+	cookieJar, _ := cookiejar.New(nil)
 
-	client := &http.Client{ 
-		Jar: cookieJar, 
-	} 
+	client := &http.Client{
+		Jar: cookieJar,
+	}
 
-	req, err := http.NewRequest("GET", addr, nil) 
+	req, err := http.NewRequest("GET", addr, nil)
 
-	if err != nil { 
-		log.Fatalln(err) 
-	} 
+	if err != nil {
+		log.Fatalln(err)
+	}
 
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.106 Safari/537.36") 
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.106 Safari/537.36")
 
-	resp, err := client.Do(req) 
-	if err != nil { 
-		log.Fatalln(err) 
-	} 
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Fatalln(err)
+	}
 
-	defer resp.Body.Close() 
-	body, err := ioutil.ReadAll(resp.Body) 
-	if err != nil { 
-		log.Fatalln(err) 
-	} 
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Fatalln(err)
+	}
 
 	year := strconv.Itoa(time.Now().Year())
 
@@ -285,7 +328,7 @@ func getWMSLayersDates (resourceId string) (string, string) {
 			if index != -1 && len(layer.Cap.Instance.Layer[l].Title) > index + 14 {
 				// layerDate exmaple: 2016-01-26 06ч
 				// букву ч убираем
-				layerDate := layer.Cap.Instance.Layer[l].Title[index:index + 13]			
+				layerDate := layer.Cap.Instance.Layer[l].Title[index:index + 13]
 				layers_pub_dates[l] = layerDate + "ч"
 			}
 		}
@@ -364,4 +407,26 @@ func ReadConfig() Config {
 	}
 	//log.Print(config.Index)
 	return config
+}
+
+/**
+   запись заголовка в документ
+ */
+func WriteXLSHeader(sheet *xlsx.Sheet, row *xlsx.Row, cell *xlsx.Cell, generationTime string) {
+	row = sheet.AddRow()
+	cell = row.AddCell()
+	cell.Value = "Время генерации справки: " + generationTime
+	row = sheet.AddRow()
+	cell = row.AddCell()
+	cell.Value = "Идентификатор ИР"
+	cell = row.AddCell()
+	cell.Value = "ПД"
+	cell = row.AddCell()
+	cell.Value = "СИ"
+	cell = row.AddCell()
+	cell.Value = "БИД (время обновления)"
+	cell = row.AddCell()
+	cell.Value = "БИД"
+	cell = row.AddCell()
+	cell.Value = "ГИС"
 }
