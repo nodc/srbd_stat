@@ -16,16 +16,17 @@ _ "github.com/lib/pq"
 "sort"
 "strconv"
 "github.com/tealeg/xlsx"
+"github.com/BurntSushi/toml"
 )
 
-const (
-	DB_ADDR		= "10.1.91.238:5432"
-    DB_USER     = "bid"
-    DB_PASSWORD = "bidesimo"
-    DB_NAME     = "bid"
-    is_date_pattern = "Mon Jan 02 15:04:05 MST-07:00 2006"			
-	global_date_pattern = "2006-01-02T15:04:05"
-)
+type Config struct {
+	DB_ADDR	string
+    DB_USER string
+    DB_PASSWORD string
+    DB_NAME     string
+    Is_date_pattern string
+	Global_date_pattern string
+}
 
 type E2ETemporalExtent struct {
 	XMLName xml.Name `xml:"E2ETemporalExtent"`
@@ -65,6 +66,8 @@ type WMS_Capabilities struct {
 }
 
 func main() {
+	var config = ReadConfig()
+
 	row := 21;
 	col := 6;
 	biddata := make([][]string, row)
@@ -85,7 +88,7 @@ func main() {
     }
 
 	dbinfo := fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable",
-        DB_USER, DB_PASSWORD, DB_ADDR, DB_NAME)
+        config.DB_USER, config.DB_PASSWORD, config.DB_ADDR, config.DB_NAME)
 	fmt.Println(dbinfo)
 	db, err_db := sql.Open("postgres", dbinfo)
 	if err_db != nil {
@@ -200,9 +203,9 @@ func main() {
 			for _, is_report_record := range is_report {
 				if (is_report_record[0] == (resource + "_1.nc")) {
 					is_data_time = is_report_record[2]
-					is_date, _ := time.Parse(is_date_pattern, is_data_time)
+					is_date, _ := time.Parse(config.Is_date_pattern, is_data_time)
 					fmt.Println(is_date)
-					is_data_time = is_date.Format(global_date_pattern)
+					is_data_time = is_date.Format(config.Global_date_pattern)
 				}
 			}
 
@@ -345,4 +348,20 @@ func getCronStartTime(expr string) (string) {
 	}
 
 	return ""
+}
+
+// загрузка конфиг-файла
+func ReadConfig() Config {
+	configfile := "config.toml"
+	_, err := os.Stat(configfile)
+	if err != nil {
+		log.Fatal("Config file is missing: ", configfile)
+	}
+
+	var config Config
+	if _, err := toml.DecodeFile(configfile, &config); err != nil {
+		log.Fatal(err)
+	}
+	//log.Print(config.Index)
+	return config
 }
