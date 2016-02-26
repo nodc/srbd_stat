@@ -1,4 +1,4 @@
-package srbd
+package main
 
 import (
 	"testing"

@@ -1,4 +1,4 @@
-package srbd
+package main
 
 import (
 	"fmt"
@@ -28,15 +28,29 @@ type Config struct {
 	Global_date_pattern string
 }
 
+// E2ESearchMD structures
 type E2ETemporalExtent struct {
 	XMLName       xml.Name `xml:"E2ETemporalExtent"`
 	BeginDateTime string `xml:"beginDateTime"`
 	EndDateTime   string `xml:"endDateTime"`
 }
 
+type E2EProcessingLevel struct {
+	XMLName		xml.Name `xml:"E2EProcessingLevel"`
+	ProcessingLevelType	string `xml:"processingLevelType"`
+	TemporalResolution	string `xml:"temporalResolution"`
+}
+
+type E2EDistributionInfo struct {
+	XMLName		xml.Name `xml:"E2EDistributionInfo"`
+	Frequency	string `xml:"frequency"`
+}
+
 type E2ESearchMD struct {
 	XMLName        xml.Name `xml:"E2ESearchMD"`
 	TemporalExtent E2ETemporalExtent `xml:"E2ETemporalExtent"`
+	ProcessingLevel E2EProcessingLevel `xml:"E2EProcessingLevel"`
+	DistributionInfo E2EDistributionInfo `xml:"E2EDistributionInfo"`
 }
 
 type Root struct {
@@ -182,6 +196,15 @@ func main() {
 			beginDateTime := root.Metadata.TemporalExtent.BeginDateTime
 			endDateTime := root.Metadata.TemporalExtent.EndDateTime
 
+			// если прогноз, то отсчет идет от beginDateTime
+			if root.Metadata.ProcessingLevel.ProcessingLevelType == "forecast" {
+				endDateTime = beginDateTime
+			}
+
+			endTime, _ := time.Parse(config.Global_date_pattern, endDateTime)
+			actual := IsActual(t, endTime, root.Metadata.DistributionInfo.Frequency,
+				root.Metadata.ProcessingLevel.ProcessingLevelType)
+
 			// get min/max dates from GIS
 			layer_min_date, layer_max_date := getWMSLayersDates(resource)
 			var layer_temporal string
@@ -205,6 +228,18 @@ func main() {
 			excel_row = sheet.AddRow()
 			cell = excel_row.AddCell()
 			cell.Value = resource
+			// неактуальные ресурсы подсвечиваются красным
+			badStyle := xlsx.NewStyle()
+			if !actual {
+				badStyle.Fill.BgColor = "red"
+			} else {
+				badStyle.Fill.BgColor = "red"
+			}
+
+			badStyle.Font.Bold = true
+			badStyle.Font.Color = "red"
+			cell.SetStyle(badStyle)
+
 			cell = excel_row.AddCell()
 			cell.Value = cronExpression
 
@@ -279,6 +314,8 @@ func main() {
 			fmt.Printf(err.Error())
 		}
 	}
+
+	fmt.Println("Color: " + xlsx.Font{}.Color)
 }
 
 // returns min date, max date from layer titles
