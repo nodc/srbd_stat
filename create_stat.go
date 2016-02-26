@@ -1,4 +1,4 @@
-package main
+package srbd
 
 import (
 	"fmt"
@@ -267,7 +267,6 @@ func main() {
 			cell = excel_row.AddCell()
 			cell.Value = layer_temporal
 
-
 			writer.Write([]string{"метаданные", beginDateTime + "-" + endDateTime, "",
 				bid_update_time, bid_md_begin + "-" + bid_md_end, ""})
 			writer.Write([]string{"данные", "", is_data_time, "", bid_temporal, layer_temporal})
@@ -445,4 +444,61 @@ func WriteXLSHeader(sheet *xlsx.Sheet, row *xlsx.Row, cell *xlsx.Cell, generatio
 	cell = row.AddCell()
 	cell.SetStyle(header_style)
 	cell.Value = "ГИС"
+}
+
+// Проверка актуальности данных ИР
+func IsActual(lastActualizeTime time.Time, endDateTime time.Time, frequency string, processingLevelType string) (bool) {
+	var result bool = false;
+
+	if frequency == "unknown" {
+		// актуальность ИР нельзя вычислить: засчитывается что актуальный
+		result = true
+	} else {
+		// проверка на актуальность данных в ИР
+		dateOffset := Backward(lastActualizeTime, frequency)
+
+		if processingLevelType == "forecast" {
+			// двигаем время проверки на дельту расчета прогноза (13 часов)
+			//@todo: добавить дельту в конфиг
+			endDateTime.Add(13 * time.Hour)
+		}
+
+		if endDateTime.After(dateOffset) {
+			result = true
+		}
+	}
+
+	return result;
+}
+
+// откатывает дату на переданную величину
+func Backward(initialDate time.Time, frequency string) (time.Time) {
+	switch frequency {
+	case "12-hourly":
+		return initialDate.Add(time.Duration(-12 * time.Hour))
+	case "3-hourly":
+		return initialDate.Add(time.Duration(-3 * time.Hour))
+	case "6-hourly":
+		return initialDate.Add(time.Duration(-6 * time.Hour))
+	case "annually":
+		return initialDate.Add(time.Duration(-12 * 31 * 24 * time.Hour))
+	case "biannually":
+		return initialDate.Add(time.Duration(-6 * 31 * 24 * time.Hour))
+	case "continual":
+		return initialDate.Add(time.Duration(-15 * time.Minute))
+	case "daily":
+		return initialDate.Add(time.Duration(-24 * time.Hour))
+	case "fortnightly":
+		return initialDate.Add(time.Duration(-2 * 7 * 24 * time.Hour)) // 2 weeks
+	case "hourly":
+		return initialDate.Add(time.Duration(-time.Hour))
+	case "monthly":
+		return initialDate.Add(time.Duration(-30 * 24 * time.Hour))
+	case "quarterly":
+		return initialDate.Add(time.Duration(-3 * 30 * 24 * time.Hour))
+	case "weekly":
+		return initialDate.Add(time.Duration(-7 * 24 * time.Hour))
+	}
+
+	return initialDate
 }
