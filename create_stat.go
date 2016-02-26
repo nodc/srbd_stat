@@ -87,6 +87,8 @@ func main() {
 		fmt.Printf(err_excel.Error())
 	}
 
+	xlsx.SetDefaultFont(11, "Calibri")
+
 	dbinfo := fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable",
 		config.DB_USER, config.DB_PASSWORD, config.DB_ADDR, config.DB_NAME)
 	fmt.Println(dbinfo)
@@ -349,6 +351,7 @@ func getWMSLayersDates(resourceId string) (string, string) {
 	return "", ""
 }
 
+//noinspection GoDuplicateFunctionOrMethod
 func getCronExpression(domain string, resource string) (string) {
 	addr := "http://" + domain + "/dpms/controller?action=getCronTriggerExpression&resourceId=";
 	res, err := http.Get(addr + resource)
@@ -365,6 +368,7 @@ func getCronExpression(domain string, resource string) (string) {
 }
 
 // приводит время старта по крону в читабельный вид
+//noinspection GoDuplicateFunctionOrMethod
 func getCronStartTime(expr string) (string) {
 	words := strings.Fields(expr)
 
@@ -413,20 +417,32 @@ func ReadConfig() Config {
    запись заголовка в документ
  */
 func WriteXLSHeader(sheet *xlsx.Sheet, row *xlsx.Row, cell *xlsx.Cell, generationTime string) {
+	header_style := xlsx.NewStyle()
+	header_style.ApplyBorder = true
+	header_style.Font.Bold = true
+	header_style.Font.Size = 12
+
 	row = sheet.AddRow()
 	cell = row.AddCell()
+	cell.Merge(1, 0)
 	cell.Value = "Время генерации справки: " + generationTime
 	row = sheet.AddRow()
 	cell = row.AddCell()
+	cell.SetStyle(header_style)
 	cell.Value = "Идентификатор ИР"
 	cell = row.AddCell()
+	cell.SetStyle(header_style)
 	cell.Value = "ПД"
 	cell = row.AddCell()
+	cell.SetStyle(header_style)
 	cell.Value = "СИ"
 	cell = row.AddCell()
+	cell.SetStyle(header_style)
 	cell.Value = "БИД (время обновления)"
 	cell = row.AddCell()
+	cell.SetStyle(header_style)
 	cell.Value = "БИД"
 	cell = row.AddCell()
+	cell.SetStyle(header_style)
 	cell.Value = "ГИС"
 }
